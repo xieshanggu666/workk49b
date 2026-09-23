@@ -41,6 +41,22 @@
     </div>
 
     <p class="note">💡 节能建议：异常/离线设备不产生用电；长时间高功率运行会触发尖峰告警，可在场景中设置自动关闭。</p>
+
+    <!-- 定额用量联动：分段用电持续聚合到各周期额度 -->
+    <div class="card quota-link" @click="store.tab='quota'">
+      <h4>📏 周期定额用量 <span class="more">配置/处理超标告警 →</span></h4>
+      <div v-if="!store.quotas.length" class="empty">尚未配置能耗定额，可按房间/设备设置日、周、月用电额度，超标自动预警并闭环处理。</div>
+      <div v-else class="qrows">
+        <div v-for="q in dailyQuotas" :key="q.id" class="qrow" :class="{over:q.alert?.level==='error',near:q.alert?.level==='warn',off:!q.enabled}">
+          <span class="ql">
+            <i class="dot"></i>{{ q.target_name }}
+            <em>{{ q.scope==='room'?'房间':'设备' }}·{{ q.period_label }}</em>
+          </span>
+          <div class="qt"><i :style="{width:Math.min(100,q.ratio)+'%'}"></i></div>
+          <span class="qv">{{ q.used_kwh.toFixed(2) }}/{{ q.limit_kwh.toFixed(2) }} · {{ q.ratio }}%</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -53,6 +69,9 @@ const onDevices = computed(() => store.onCount)
 const peakRoom = computed(() => store.energy.rooms[0]?.room || '—')
 const topDevices = computed(() => store.energy.devices.slice(0, 10))
 const hasDeleted = computed(() => store.energy.devices.some((d) => d.deleted || d.unbound))
+// 用量占比最高的 6 条定额优先展示，超标风险一目了然
+const dailyQuotas = computed(() =>
+  [...store.quotas].sort((a, b) => b.ratio - a.ratio).slice(0, 6))
 
 function pct(v) {
   const max = Math.max(...store.energy.rooms.map((r) => r.v), 0.001)
@@ -85,4 +104,21 @@ td{color:#dbe4f3;}
 .sub{margin:10px 0 0;font-size:11px;color:#5b6f94;}
 .empty{color:#5b6f94;text-align:center;padding:14px;font-size:12px;}
 .note{color:#8ba2c8;font-size:12px;background:#14273f;border:1px dashed #ffd54f;color:#ffd54f;border-radius:10px;padding:12px 16px;}
+.quota-link{cursor:pointer;}
+.quota-link:hover{border-color:rgba(66,165,245,0.4);}
+.more{float:right;font-size:11px;color:#64b5f6;font-weight:400;}
+.qrows{display:flex;flex-direction:column;gap:9px;}
+.qrow{display:flex;align-items:center;gap:10px;font-size:12px;color:#dbe4f3;}
+.qrow.off{opacity:.5;}
+.ql{width:170px;min-width:170px;}
+.ql em{font-style:normal;color:#5b6f94;font-size:10px;margin-left:6px;}
+.ql .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#42a5f5;margin-right:6px;}
+.qrow.near .ql .dot{background:#ffa726;}
+.qrow.over .ql .dot{background:#ef5350;}
+.qv{width:190px;text-align:right;font-size:11px;color:#8ba2c8;}
+.qrow.over .qv{color:#ef9a9a;font-weight:600;}
+.qrow.near .qv{color:#ffcc80;font-weight:600;}
+.qrow .qt i{display:block;height:100%;background:#42a5f5;}
+.qrow.near .qt i{background:linear-gradient(90deg,#42a5f5,#ffa726);}
+.qrow.over .qt i{background:linear-gradient(90deg,#ffa726,#ef5350);}
 </style>

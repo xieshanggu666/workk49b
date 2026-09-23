@@ -3,7 +3,7 @@
     <header class="top">
       <div class="brand"><span class="logo">🏠</span><div><b>智居</b><em>Smart Home</em></div></div>
       <nav class="tabs">
-        <button v-for="t in tabs" :key="t.key" :class="{active:tab===t.key}" @click="tab=t.key">
+        <button v-for="t in tabs" :key="t.key" :class="{active:store.tab===t.key}" @click="store.tab=t.key">
           {{ t.icon }} {{ t.label }}<span v-if="t.badge && t.badge()" class="bd">{{ t.badge() }}</span>
         </button>
       </nav>
@@ -11,11 +11,12 @@
     </header>
 
     <main>
-      <DashboardView v-if="tab==='dash'" />
-      <DevicesView v-else-if="tab==='devices'" />
-      <ScenesView v-else-if="tab==='scenes'" />
-      <EnergyView v-else-if="tab==='energy'" />
-      <LogsView v-else-if="tab==='logs'" />
+      <DashboardView v-if="store.tab==='dash'" />
+      <DevicesView v-else-if="store.tab==='devices'" />
+      <ScenesView v-else-if="store.tab==='scenes'" />
+      <EnergyView v-else-if="store.tab==='energy'" />
+      <QuotaView v-else-if="store.tab==='quota'" />
+      <LogsView v-else-if="store.tab==='logs'" />
     </main>
 
     <transition name="tg">
@@ -25,21 +26,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useHomeStore } from '@/store/home'
 import DashboardView from '@/components/DashboardView.vue'
 import DevicesView from '@/components/DevicesView.vue'
 import ScenesView from '@/components/ScenesView.vue'
 import EnergyView from '@/components/EnergyView.vue'
+import QuotaView from '@/components/QuotaView.vue'
 import LogsView from '@/components/LogsView.vue'
 
 const store = useHomeStore()
-const tab = ref('dash')
 const tabs = [
   { key: 'dash', icon: '📊', label: '健康看板', badge: () => store.alerts.length || 0 },
   { key: 'devices', icon: '📟', label: '设备管理' },
   { key: 'scenes', icon: '🎬', label: '场景联动' },
   { key: 'energy', icon: '⚡', label: '能耗统计' },
+  { key: 'quota', icon: '📏', label: '能耗定额', badge: () => store.pendingQuotaAlerts.length || 0 },
   { key: 'logs', icon: '📜', label: '日志' }
 ]
 onMounted(async () => {

@@ -36,9 +36,13 @@
       <div class="card">
         <h4>🚨 告警中心</h4>
         <div v-if="!store.alerts.length" class="none">✨ 无告警，一切正常</div>
-        <div v-for="(a,i) in store.alerts" :key="i" class="alert" :class="a.level">
+        <div v-for="(a,i) in store.alerts" :key="i" class="alert" :class="[a.level, {clickable:a.kind==='quota'}]"
+             @click="a.kind==='quota' && (store.tab='quota')">
           <span class="a-ic">{{ a.level==='error'?'🔴':a.level==='warn'?'🟠':'🔵' }}</span>
-          <div class="a-info"><b>{{ a.device }}</b><span>{{ a.text }}</span></div>
+          <div class="a-info">
+            <b>{{ a.device }}<i v-if="a.kind==='quota'" class="qtag">定额 →</i></b>
+            <span>{{ a.text }}</span>
+          </div>
         </div>
       </div>
 
@@ -49,6 +53,22 @@
           <div v-for="(c,idx) in chartData" :key="idx" class="bar" :title="c.hour + '时 ' + c.v.toFixed(2) + ' kWh'">
             <i :style="{height: c.pct + '%', background: c.color}"></i>
             <span v-if="idx%4===0" class="xl">{{ c.hour }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 能耗定额执行情况 -->
+      <div class="card wide quota-card" @click="store.tab='quota'">
+        <h4>📏 能耗定额执行（点击进入定额闭环管理）</h4>
+        <div v-if="!store.quotas.length" class="none">尚未配置定额，可按房间/设备设置日、周、月用电额度</div>
+        <div v-else class="q-grid">
+          <div v-for="q in store.quotas.slice(0,8)" :key="q.id" class="q-item" :class="{over:q.alert?.level==='error',near:q.alert?.level==='warn'}">
+            <div class="q-top">
+              <b>{{ q.target_name }}</b>
+              <span>{{ q.scope==='room'?'房间':'设备' }} · {{ q.period_label }}</span>
+            </div>
+            <div class="q-bar"><i :style="{width:Math.min(100,q.ratio)+'%'}"></i></div>
+            <div class="q-num">{{ q.used_kwh.toFixed(2) }} / {{ q.limit_kwh.toFixed(2) }} kWh · {{ q.ratio }}%</div>
           </div>
         </div>
       </div>
@@ -121,6 +141,23 @@ h4{margin:0 0 12px;color:#fff;font-size:14px;}
 .a-info b{display:block;color:#dbe4f3;font-size:13px;}
 .a-info span{font-size:11px;color:#8ba2c8;}
 .alert.error b{color:#ef5350;}.alert.warn b{color:#ffb300;}
+.alert.clickable{cursor:pointer;border-radius:8px;padding:8px 6px;}
+.alert.clickable:hover{background:#13233f;}
+.qtag{font-style:normal;font-size:9px;background:#13315c;color:#90caf9;border-radius:5px;padding:1px 6px;margin-left:6px;font-weight:400;}
+.quota-card{cursor:pointer;}
+.quota-card:hover{border-color:rgba(66,165,245,0.4);}
+.q-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
+.q-item{background:#0c1730;border:1px solid rgba(120,160,220,0.12);border-radius:9px;padding:9px 11px;}
+.q-item.near{border-color:rgba(255,167,38,0.5);}
+.q-item.over{border-color:rgba(239,83,80,0.6);}
+.q-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.q-top b{color:#dbe4f3;font-size:12px;}
+.q-top span{font-size:10px;color:#5b6f94;}
+.q-bar{height:7px;background:#0a1224;border-radius:4px;overflow:hidden;margin:6px 0 4px;}
+.q-bar i{display:block;height:100%;background:#42a5f5;}
+.q-item.near .q-bar i{background:#ffa726;}
+.q-item.over .q-bar i{background:#ef5350;}
+.q-num{font-size:10px;color:#8ba2c8;}
 .energy-chart{display:flex;align-items:flex-end;gap:4px;height:160px;padding-top:10px;}
 .bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;}
 .bar i{width:70%;border-radius:4px 4px 0 0;min-height:4px;transition:height .3s;}

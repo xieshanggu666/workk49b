@@ -1,9 +1,10 @@
 import express from 'express'
 import { db } from './db.js'
 import { initEnergy, reconcileDevice, closeDevice, getSummary } from './energy.js'
-
-// 必须在 db.js 建表/播种完成后初始化能耗模块
-initEnergy(db)
+import {
+  initQuota, evaluateAll, createQuota, updateQuota, deleteQuota,
+  handleAlert, listQuotas, listAlerts, getAdjustments, activeAlertCount
+} from './quota.js'
 
 const app = express()
 app.use(express.json())
@@ -12,6 +13,14 @@ const q = (sql, ...p) => db.prepare(sql).all(...p)
 const q1 = (sql, ...p) => db.prepare(sql).get(...p)
 const run = (sql, ...p) => db.prepare(sql).run(...p)
 const now = () => new Date().toLocaleString('zh-CN')
+
+// 必须在 db.js 建表/播种完成后初始化能耗模块
+initEnergy(db)
+// 定额模块依赖分段表：预警/超标触发时通过回调写入日志时间线作为通知
+initQuota(db, (entry, timeStr) => {
+  run('INSERT INTO device_logs (device_name,action,detail,time) VALUES (?,?,?,?)',
+    entry.device, entry.action, entry.detail, timeStr || now())
+})
 
 // 追加日志
 function log(device, action, detail = '') {
@@ -43,6 +52,8 @@ app.get('/api/state', (req, res) => {
     }),
     logs: q('SELECT * FROM device_logs ORDER BY id DESC LIMIT 50'),
     energy,
+    quotas: listQuotas(),
+    quota_alerts: listAlerts(),
     alerts: computeAlerts(energy)
   })
 })
@@ -61,6 +72,16 @@ function computeAlerts(energy) {
     if (!d.deleted && !d.unbound && d.active_buckets >= 6 && d.peak >= 0.05 && d.avg > 0 && d.peak > d.avg * 3) {
       alerts.push({ device: d.device_name, level: 'info', text: `能耗尖峰：单小时 ${d.peak.toFixed(2)}kWh，远超均值 ${d.avg.toFixed(2)}kWh` })
     }
+  }
+  // 定额超标预警/告警：仅未闭环（待处理、处理中）的进入告警中心；已处理/已忽略不再打扰
+  for (const a of listAlerts()) {
+    if (a.status === 'resolved' || a.status === 'ignored') continue
+    alerts.push({
+      kind: 'quota', quota_alert_id: a.id,
+      device: `${a.scope === 'room' ? '房间' : '设备'}·${a.target_name}`,
+      level: a.level,
+      text: `${a.period_label}定额${a.level === 'error' ? '超标' : '接近超标'}：已用 ${a.used_kwh.toFixed(2)}/${a.limit_kwh}kWh（${Math.round((a.used_kwh / a.limit_kwh) * 100)}%，${a.status_label}）`
+    })
   }
   return alerts
 }
@@ -81,6 +102,8 @@ app.delete('/api/device/:id', (req, res) => {
   // 先结落未结用电段（历史记录保留），再删除设备
   closeDevice(d.id)
   run('DELETE FROM devices WHERE id=?', d.id)
+  // 结段产生的新记录先计入定额，再评估（设备定额保留并标记已删除，历史告警按快照留存）
+  evaluateAll()
   log(d.name, '删除设备', affected ? `${affected} 个场景动作失效` : '')
   res.json({ ok: true, affected_actions: affected })
 })
@@ -93,6 +116,7 @@ app.post('/api/device/:id/toggle', (req, res) => {
   run('UPDATE devices SET power_on=? WHERE id=?', on, d.id)
   // 开关即分段边界：关闭结落本段用电，开启打开新段
   reconcileDevice(d.id)
+  evaluateAll()
   log(d.name, on ? '开启' : '关闭')
   res.json({ ok: true, power_on: on })
 })
@@ -185,6 +209,53 @@ app.post('/api/scene/:id/run', (req, res) => {
     executed.push({ device: a.dname, action: a.action })
   }
   res.json({ ok: failed.length === 0, executed, failed })
+})
+
+// ===== 能耗定额与超标预警闭环 =====
+// 额度配置（按房间/设备 × 日/周/月）；同一对象同一周期唯一
+app.post('/api/quota', (req, res) => {
+  try {
+    const id = createQuota(req.body || {})
+    log('定额', '新增定额',
+      `${req.body.scope === 'room' ? '房间' : '设备'}定额已配置，周期 ${req.body.period}，额度 ${Number(req.body.limit_kwh)}kWh`)
+    res.json({ ok: true, id })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+app.post('/api/quota/:id/update', (req, res) => {
+  try {
+    const changes = updateQuota(Number(req.params.id), req.body || {})
+    const q0 = q1('SELECT * FROM energy_quotas WHERE id=?', req.params.id)
+    log('定额', '调整定额',
+      `「${q0.target_name}」${changes.length ? changes.join('，') : '无变化'}` +
+      `${req.body.reason ? `；备注：${req.body.reason}` : ''}`)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+app.delete('/api/quota/:id', (req, res) => {
+  try {
+    const q0 = q1('SELECT * FROM energy_quotas WHERE id=?', req.params.id)
+    deleteQuota(Number(req.params.id), req.body?.reason || '')
+    if (q0) log('定额', '删除定额', `「${q0.target_name}」${q0.period} 定额已删除，未关闭告警自动解除`)
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+// 告警处理闭环：待处理 → 处理中 → 已处理/已忽略，可附处理备注
+app.post('/api/quota-alert/:id/handle', (req, res) => {
+  try {
+    const { status, note } = req.body || {}
+    const a = q1('SELECT * FROM quota_alerts WHERE id=?', req.params.id)
+    if (!a) return res.status(404).json({ error: '告警不存在' })
+    handleAlert(Number(req.params.id), { status, note })
+    const label = { handling: '开始处理', resolved: '标记已处理', ignored: '忽略告警', open: '退回待处理' }[status] || '更新状态'
+    const periodLabel = { daily: '每日', weekly: '每周', monthly: '每月' }[a.period] || a.period
+    log(`${a.scope === 'room' ? '房间' : '设备'}·${a.target_name}`, `定额告警·${label}`,
+      `${periodLabel}用量 ${a.used_kwh.toFixed(2)}/${a.limit_kwh}kWh` + (note ? `；备注：${note}` : ''))
+    res.json({ ok: true })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+// 额度调整历史（不传 quota_id 时为全局最近 50 条）
+app.get('/api/quota-adjustments', (req, res) => {
+  res.json(getAdjustments(req.query.quota_id ? Number(req.query.quota_id) : null))
 })
 
 // ===== 日志 =====
