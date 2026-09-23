@@ -3,19 +3,20 @@
     <header class="top">
       <div class="brand"><span class="logo">🏠</span><div><b>智居</b><em>Smart Home</em></div></div>
       <nav class="tabs">
-        <button v-for="t in tabs" :key="t.key" :class="{active:tab===t.key}" @click="tab=t.key">
-          {{ t.icon }} {{ t.label }}<span v-if="t.badge && t.badge()" class="bd">{{ t.badge() }}</span>
+        <button v-for="t in tabs" :key="t.key" :class="{active:store.tab===t.key}" @click="store.tab=t.key">
+          {{ t.icon }} {{ t.label }}<span v-if="t.badge && t.badge()" class="bd" :class="t.danger ? 'danger' : ''">{{ t.badge() }}</span>
         </button>
       </nav>
       <button class="reload" @click="store.load()">🔄</button>
     </header>
 
     <main>
-      <DashboardView v-if="tab==='dash'" />
-      <DevicesView v-else-if="tab==='devices'" />
-      <ScenesView v-else-if="tab==='scenes'" />
-      <EnergyView v-else-if="tab==='energy'" />
-      <LogsView v-else-if="tab==='logs'" />
+      <DashboardView v-if="store.tab==='dash'" />
+      <DevicesView v-else-if="store.tab==='devices'" />
+      <ScenesView v-else-if="store.tab==='scenes'" />
+      <EnergyView v-else-if="store.tab==='energy'" />
+      <QuotasView v-else-if="store.tab==='quota'" />
+      <LogsView v-else-if="store.tab==='logs'" />
     </main>
 
     <transition name="tg">
@@ -25,21 +26,22 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useHomeStore } from '@/store/home'
 import DashboardView from '@/components/DashboardView.vue'
 import DevicesView from '@/components/DevicesView.vue'
 import ScenesView from '@/components/ScenesView.vue'
 import EnergyView from '@/components/EnergyView.vue'
+import QuotasView from '@/components/QuotasView.vue'
 import LogsView from '@/components/LogsView.vue'
 
 const store = useHomeStore()
-const tab = ref('dash')
 const tabs = [
   { key: 'dash', icon: '📊', label: '健康看板', badge: () => store.alerts.length || 0 },
   { key: 'devices', icon: '📟', label: '设备管理' },
   { key: 'scenes', icon: '🎬', label: '场景联动' },
   { key: 'energy', icon: '⚡', label: '能耗统计' },
+  { key: 'quota', icon: '📈', label: '定额预警', danger: true, badge: () => store.openQuotaCount || 0 },
   { key: 'logs', icon: '📜', label: '日志' }
 ]
 onMounted(async () => {
@@ -59,6 +61,8 @@ onMounted(async () => {
 .tabs button{background:#13233f;border:1px solid rgba(120,160,220,0.2);color:#aebadd;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;position:relative;}
 .tabs button.active{background:linear-gradient(135deg,#1d3f8f,#2962ff);color:#fff;border-color:transparent;}
 .bd{position:absolute;top:-4px;right:-4px;background:#ef5350;color:#fff;font-size:9px;border-radius:8px;padding:1px 5px;font-weight:700;}
+.bd.danger{background:#ff6d00;animation:pulse 1.6s infinite;}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,109,0,.5);}50%{box-shadow:0 0 0 5px rgba(255,109,0,0);}}
 .reload{margin-left:auto;background:#13233f;border:1px solid rgba(120,160,220,0.3);border-radius:8px;color:#8ba2c8;font-size:16px;cursor:pointer;padding:4px 10px;}
 main{max-width:1240px;margin:0 auto;padding:18px 20px;}
 .toast{position:fixed;right:20px;top:70px;z-index:50;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.4);cursor:pointer;}

@@ -6,6 +6,7 @@
       <div class="stat-card green"><span class="icon">🟢</span><div><b>{{ store.onlineCount }}</b><em>在线</em></div></div>
       <div class="stat-card red"><span class="icon">🔴</span><div><b>{{ store.errorCount }}</b><em>异常</em></div></div>
       <div class="stat-card amber"><span class="icon">⚡</span><div><b>{{ onCount }}<em>开启中</em></b><em class="small">{{ (store.totalWatts/1000).toFixed(1) }} kW</em></div></div>
+      <div class="stat-card blue" :class="{alert: quotaOverCount > 0}"><span class="icon">📈</span><div><b>{{ quotaOverCount || quotaWarnCount || 0 }}</b><em>{{ quotaOverCount ? '定额超标' : quotaWarnCount ? '定额预警' : '定额正常' }}</em></div></div>
       <div class="stat-card blue"><span class="icon">🔔</span><div><b>{{ store.alerts.length }}</b><em>活跃告警</em></div></div>
     </div>
 
@@ -61,6 +62,8 @@ import { computed } from 'vue'
 import { useHomeStore } from '@/store/home'
 const store = useHomeStore()
 const onCount = computed(() => store.onCount)
+const quotaOverCount = computed(() => store.quota.summary?.over_count || 0)
+const quotaWarnCount = computed(() => store.quota.summary?.warn_count || 0)
 
 const roomStats = computed(() => {
   const m = {}
@@ -102,6 +105,8 @@ const chartData = computed(() => {
 .stat-card em{font-size:11px;color:#8ba2c8;font-style:normal;}
 .stat-card em.small{color:#ffd54f;}
 .stat-card.red b{color:#ef5350;}.stat-card.green b{color:#66bb6a;}.stat-card.amber b{color:#ffb300;}.stat-card.blue b{color:#42a5f5;}
+.stat-card.alert{border-color:rgba(239,83,80,.6);box-shadow:0 0 0 1px rgba(239,83,80,.25);}
+.stat-card.alert b{color:#ef5350;}
 .dash-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
 @media(max-width:860px){.dash-grid{grid-template-columns:1fr;}}
 .card{background:#0f1b38;border:1px solid rgba(120,160,220,0.16);border-radius:12px;padding:16px;}
